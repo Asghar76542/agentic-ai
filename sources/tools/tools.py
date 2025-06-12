@@ -1,219 +1,156 @@
+"""Generic tool base class used by various agents."""
 
-"""
-define a generic tool class, any tool can be used by the agent.
+from __future__ import annotations
 
-A tool can be used by a llm like so:
-```<tool name>
-<code or query to execute>
-```
-
-we call these "blocks".
-
-For example:
-```python
-print("Hello world")
-```
-This is then executed by the tool with its own class implementation of execute().
-A tool is not just for code tool but also API, internet search, MCP, etc..
-"""
-
-import sys
 import os
 import configparser
-from abc import abstractmethod
-
-if __name__ == "__main__": # if running as a script for individual testing
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from abc import ABC, abstractmethod
+from typing import List, Tuple, Optional
 
 from sources.logger import Logger
 
-class Tools():
-    """
-    Abstract class for all tools.
-    """
-    def __init__(self):
-        self.tag = "undefined"
-        self.name = "undefined"
-        self.description = "undefined"
+
+class Tools(ABC):
+    """Abstract base class for all tools."""
+
+    def __init__(self) -> None:
+        self.tag: str = "undefined"
+        self.name: str = "undefined"
+        self.description: str = "undefined"
         self.client = None
-        self.messages = []
+        self.messages: List[str] = []
         self.logger = Logger("tools.log")
         self.config = configparser.ConfigParser()
         self.work_dir = self.create_work_dir()
-        self.excutable_blocks_found = False
+        self._executable_blocks_found = False
         self.safe_mode = True
         self.allow_language_exec_bash = False
-    
-    def get_work_dir(self):
+
+    def get_work_dir(self) -> str:
         return self.work_dir
-    
-    def set_allow_language_exec_bash(value: bool) -> None:
-        self.allow_language_exec_bash = value 
 
-    def safe_get_work_dir_path(self):
-        path = None
-        path = os.getenv('WORK_DIR', path)
-        if path is None or path == "":
-            path = self.config['MAIN']['work_dir'] if 'MAIN' in self.config and 'work_dir' in self.config['MAIN'] else None
-        if path is None or path == "":
+    def set_allow_language_exec_bash(self, value: bool) -> None:
+        self.allow_language_exec_bash = value
+
+    def config_exists(self) -> bool:
+        return os.path.exists("./config.ini")
+
+    def safe_get_work_dir_path(self) -> str:
+        """Return the work directory path from env or config or default."""
+        path = os.getenv("WORK_DIR")
+        if not path and self.config_exists():
+            self.config.read("./config.ini")
+            path = self.config.get("MAIN", "work_dir", fallback="")
+        if not path:
             print("No work directory specified, using default.")
-            path = self.create_work_dir()
+            path = os.path.dirname(os.getcwd())
         return path
-    
-    def config_exists(self):
-        """Check if the config file exists."""
-        return os.path.exists('./config.ini')
 
-    def create_work_dir(self):
-        """Create the work directory if it does not exist."""
-        default_path = os.path.dirname(os.getcwd())
-        if self.config_exists():
-            self.config.read('./config.ini')
-            workdir_path = self.safe_get_work_dir_path()
-        else:
-            workdir_path = default_path
-        return workdir_path
+    def create_work_dir(self) -> str:
+        path = self.safe_get_work_dir_path()
+        os.makedirs(path, exist_ok=True)
+        return path
 
+    # ------------------------------------------------------------------
+    # Abstract methods implemented by concrete tools
     @abstractmethod
-    def execute(self, blocks:[str], safety:bool) -> str:
-        """
-        Abstract method that must be implemented by child classes to execute the tool's functionality.
-        Args:
-            blocks (List[str]): The codes or queries blocks to execute
-            safety (bool): Whenever human intervention is required
-        Returns:
-            str: The output/result from executing the tool
-        """
+    def execute(self, blocks: List[str], safety: bool) -> str:
         pass
 
     @abstractmethod
-    def execution_failure_check(self, output:str) -> bool:
-        """
-        Abstract method that must be implemented by child classes to check if tool execution failed.
-        Args:
-            output (str): The output string from the tool execution to analyze
-        Returns:
-            bool: True if execution failed, False if successful
-        """
+    def execution_failure_check(self, output: str) -> bool:
         pass
 
     @abstractmethod
-    def interpreter_feedback(self, output:str) -> str:
-        """
-        Abstract method that must be implemented by child classes to provide feedback to the AI from the tool.
-        Args:
-            output (str): The output string from the tool execution to analyze
-        Returns:
-            str: The feedback message to the AI
-        """
+    def interpreter_feedback(self, output: str) -> str:
         pass
 
-    def save_block(self, blocks:[str], save_path:str) -> None:
-        """
-        Save code or query blocks to a file at the specified path.
-        Creates the directory path if it doesn't exist.
-        Args:
-            blocks (List[str]): List of code/query blocks to save
-            save_path (str): File path where blocks should be saved
-        """
+    # ------------------------------------------------------------------
+    def save_block(self, blocks: List[str], save_path: str) -> None:
         if save_path is None:
             return
         self.logger.info(f"Saving blocks to {save_path}")
-        save_path_dir = os.path.dirname(save_path)
-        save_path_file = os.path.basename(save_path)
-        directory = os.path.join(self.work_dir, save_path_dir)
-        if directory and not os.path.exists(directory):
-            self.logger.info(f"Creating directory {directory}")
-            os.makedirs(directory)
-        for block in blocks:
-            with open(os.path.join(directory, save_path_file), 'w') as f:
+        directory = os.path.join(self.work_dir, os.path.dirname(save_path))
+        os.makedirs(directory, exist_ok=True)
+        file_path = os.path.join(directory, os.path.basename(save_path))
+        with open(file_path, "w") as f:
+            for block in blocks:
                 f.write(block)
-    
-    def get_parameter_value(self, block: str, parameter_name: str) -> str:
+
+    def get_parameter_value(self, block: str, parameter_name: str) -> Optional[str]:
+        """Return the value of ``parameter_name`` within ``block``.
+
+        Parameters are expected in the form ``<name> = <value>`` but extra
+        whitespace is tolerated.
         """
-        Get a parameter name.
-        Args:
-            block (str): The block of text to search for the parameter
-            parameter_name (str): The name of the parameter to retrieve
-        Returns:
-            str: The value of the parameter
-        """
-        for param_line in block.split('\n'):
-            if parameter_name in param_line:
-                param_value = param_line.split('=')[1].strip()
-                return param_value
+        prefix = parameter_name.strip()
+        for line in block.splitlines():
+            line = line.strip()
+            if not line or not line.startswith(prefix):
+                continue
+            if "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            if name.strip() == prefix:
+                return value.strip()
         return None
-    
-    def found_executable_blocks(self):
-        """
-        Check if executable blocks were found.
-        """
-        tmp = self.excutable_blocks_found
-        self.excutable_blocks_found = False
-        return tmp
 
-    def load_exec_block(self, llm_text: str) -> tuple[list[str], str | None]:
-        """
-        Extract code/query blocks from LLM-generated text and process them for execution.
-        This method parses the text looking for code blocks marked with the tool's tag (e.g. ```python).
-        Args:
-            llm_text (str): The raw text containing code blocks from the LLM
-        Returns:
-            tuple[list[str], str | None]: A tuple containing:
-                - List of extracted and processed code blocks
-                - The path the code blocks was saved to
-        """
+    def found_executable_blocks(self) -> bool:
+        result = self._executable_blocks_found
+        self._executable_blocks_found = False
+        return result
+
+    # ------------------------------------------------------------------
+    def load_exec_block(
+        self, llm_text: str
+    ) -> Tuple[Optional[List[str]], Optional[str]]:
+        """Extract executable code blocks from LLM text."""
         assert self.tag != "undefined", "Tag not defined"
-        start_tag = f'```{self.tag}' 
-        end_tag = '```'
-        code_blocks = []
-        start_index = 0
-        save_path = None
-
+        start_tag = f"```{self.tag}"
+        end_tag = "```"
         if start_tag not in llm_text:
             return None, None
 
+        blocks: List[str] = []
+        save_path: Optional[str] = None
+        index = 0
         while True:
-            start_pos = llm_text.find(start_tag, start_index)
+            start_pos = llm_text.find(start_tag, index)
             if start_pos == -1:
                 break
-
-            line_start = llm_text.rfind('\n', 0, start_pos)+1
-            leading_whitespace = llm_text[line_start:start_pos]
-
             end_pos = llm_text.find(end_tag, start_pos + len(start_tag))
             if end_pos == -1:
-                break
-            content = llm_text[start_pos + len(start_tag):end_pos]
-            lines = content.split('\n')
-            if leading_whitespace:
-                processed_lines = []
-                for line in lines:
-                    if line.startswith(leading_whitespace):
-                        processed_lines.append(line[len(leading_whitespace):])
-                    else:
-                        processed_lines.append(line)
-                content = '\n'.join(processed_lines)
+                # incomplete block
+                return [], None
+            content = llm_text[start_pos + len(start_tag) : end_pos]
+            content = self._dedent_block(content)
+            if not content.startswith("\n"):
+                content = "\n" + content
+            if not content.endswith("\n"):
+                content = content + "\n"
+            blocks.append(content)
+            self._executable_blocks_found = True
+            index = end_pos + len(end_tag)
+        self.logger.info(f"Found {len(blocks)} blocks to execute")
+        return blocks, save_path
 
-            if ':' in content.split('\n')[0]:
-                save_path = content.split('\n')[0].split(':')[1]
-                content = content[content.find('\n')+1:]
-            self.excutable_blocks_found = True
-            code_blocks.append(content)
-            start_index = end_pos + len(end_tag)
-        self.logger.info(f"Found {len(code_blocks)} blocks to execute")
-        return code_blocks, save_path
-    
+    def _dedent_block(self, block: str) -> str:
+        """Remove common leading whitespace from block."""
+        lines = block.splitlines()
+        if not lines:
+            return ""
+        # Determine minimum indentation
+        indents = [len(line) - len(line.lstrip()) for line in lines if line.strip()]
+        indent = min(indents) if indents else 0
+        dedented = "\n".join(
+            line[indent:] if len(line) >= indent else line for line in lines
+        )
+        return dedented
+
+
 if __name__ == "__main__":
-    tool = Tools()
-    tool.tag = "python"
-    rt = tool.load_exec_block("""```python
-import os
-
-for file in os.listdir():
-    if file.endswith('.py'):
-        print(file)
-```
-goodbye!
-    """)
-    print(rt)
+    # Simple manual test
+    t = Tools()  # type: ignore  # abstract base instantiation for manual run
+    t.tag = "python"
+    code, _ = t.load_exec_block("""```python\nprint('hello')\n```""")
+    print(code)
