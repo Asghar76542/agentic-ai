@@ -1,0 +1,19 @@
+{
+  "total_memories": 0,
+  "queries_performed": 0,
+  "cache_hits": 0,
+  "average_retrieval_time": 0.0,
+  "memory_usage_mb": 0.0,
+  "memory_entries_count": 0,
+  "average_content_length": 0,
+  "role_distribution": {},
+  "agent_type_distribution": {},
+  "importance_distribution": {
+    "low": 0,
+    "medium": 0,
+    "high": 0
+  },
+  "session_count": 0,
+  "oldest_memory": null,
+  "newest_memory": null
+}

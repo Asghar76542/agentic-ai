@@ -24,6 +24,7 @@ import tempfile
 import markdownify
 import sys
 import re
+import subprocess
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -76,24 +77,94 @@ def get_random_user_agent() -> str:
     ]
     return random.choice(user_agents)
 
+def get_chrome_version() -> str:
+    """Get the installed Chrome browser version."""
+    chrome_path = get_chrome_path()
+    if not chrome_path:
+        return None
+    
+    try:
+        import subprocess
+        if os.name == 'nt':  # Windows
+            result = subprocess.run([chrome_path, '--version'], capture_output=True, text=True, shell=True)
+        else:  # macOS/Linux
+            result = subprocess.run([chrome_path, '--version'], capture_output=True, text=True)
+        
+        version_line = result.stdout.strip()
+        # Extract version number (e.g., "Google Chrome 134.0.6998.89" -> "134.0.6998.89")
+        version_match = re.search(r'(\d+\.[\d.]+)', version_line)
+        if version_match:
+            return version_match.group(1)
+    except Exception as e:
+        pretty_print(f"Could not determine Chrome version: {e}", color="warning")
+    
+    return None
+
 def install_chromedriver() -> str:
     """
-    Install the ChromeDriver if not already installed. Return the path.
+    Install the ChromeDriver if not already installed. Enhanced version with better compatibility.
     """
     chromedriver_path = shutil.which("chromedriver")
+    
+    # If ChromeDriver exists, verify it's compatible with current Chrome
+    if chromedriver_path:
+        try:
+            chrome_version = get_chrome_version()
+            if chrome_version:
+                # Test ChromeDriver with current Chrome
+                service = Service(chromedriver_path)
+                options = Options()
+                options.add_argument("--headless")
+                options.add_argument("--no-sandbox")
+                options.add_argument("--disable-dev-shm-usage")
+                
+                test_driver = webdriver.Chrome(service=service, options=options)
+                test_driver.quit()
+                pretty_print(f"Found compatible ChromeDriver at: {chromedriver_path}", color="success")
+                return chromedriver_path
+        except Exception as e:
+            pretty_print(f"Existing ChromeDriver incompatible: {str(e)}", color="warning")
+            chromedriver_path = None
+    
+    # Try to install/update ChromeDriver
     if not chromedriver_path:
         try:
-            print("ChromeDriver not found, attempting to install automatically...")
+            pretty_print("ChromeDriver not found or incompatible, attempting to install automatically...", color="status")
+            
+            # First try the autoinstaller
             chromedriver_path = chromedriver_autoinstaller.install()
+            
+            # Verify the installation works
+            service = Service(chromedriver_path)
+            options = Options()
+            options.add_argument("--headless")
+            options.add_argument("--no-sandbox")
+            options.add_argument("--disable-dev-shm-usage")
+            
+            test_driver = webdriver.Chrome(service=service, options=options)
+            test_driver.quit()
+            pretty_print(f"Successfully installed ChromeDriver at: {chromedriver_path}", color="success")
+            
         except Exception as e:
-            raise FileNotFoundError(
-                "ChromeDriver not found and could not be installed automatically. "
-                "Please install it manually from https://chromedriver.chromium.org/downloads."
-                "and ensure it's in your PATH or specify the path directly."
-                "See know issues in readme if your chrome version is above 115."
-            ) from e
+            # Enhanced error message with specific guidance
+            chrome_version = get_chrome_version()
+            error_msg = (
+                f"ChromeDriver installation failed: {str(e)}\n\n"
+                f"Current Chrome version: {chrome_version or 'Unknown'}\n\n"
+                "Manual installation required:\n"
+                "1. For Chrome 115+: https://googlechromelabs.github.io/chrome-for-testing/\n"
+                "2. For older Chrome: https://chromedriver.chromium.org/downloads\n"
+                "3. Download the version matching your Chrome browser\n"
+                "4. Place chromedriver in your PATH or project directory\n\n"
+                "See 'Known Issues > ChromeDriver Issues' in README for detailed instructions."
+            )
+            
+            pretty_print(error_msg, color="failure")
+            raise FileNotFoundError(error_msg) from e
+    
     if not chromedriver_path:
-        raise FileNotFoundError("ChromeDriver not found. Please install it or add it to your PATH.")
+        raise FileNotFoundError("ChromeDriver not found. Please install it manually or add it to your PATH.")
+    
     return chromedriver_path
 
 def bypass_ssl() -> str:
@@ -104,20 +175,32 @@ def bypass_ssl() -> str:
     ssl._create_default_https_context = ssl._create_unverified_context
 
 def create_undetected_chromedriver(service, chrome_options) -> webdriver.Chrome:
-    """Create an undetected ChromeDriver instance."""
+    """Create an undetected ChromeDriver instance with enhanced error handling."""
     try:
         driver = uc.Chrome(service=service, options=chrome_options)
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+        return driver
     except Exception as e:
-        pretty_print(f"Failed to create Chrome driver: {str(e)}. Trying to bypass SSL...", color="failure")
+        pretty_print(f"Failed to create undetected Chrome driver: {str(e)}", color="failure")
+        
+        # Check if it's a ChromeDriver version mismatch
+        if "session not created" in str(e) or "version" in str(e).lower():
+            pretty_print("This appears to be a ChromeDriver version mismatch.", color="warning")
+            chrome_version = get_chrome_version()
+            pretty_print(f"Current Chrome version: {chrome_version or 'Unknown'}", color="info")
+            pretty_print("Try updating ChromeDriver to match your Chrome version.", color="info")
+        
+        # Try SSL bypass as fallback
         try:
+            pretty_print("Attempting SSL bypass fallback...", color="status")
             bypass_ssl()
             driver = uc.Chrome(service=service, options=chrome_options)
-        except Exception as e:
-            pretty_print(f"Failed to create Chrome driver, fallback failed:\n{str(e)}.", color="failure")
+            driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+            pretty_print("SSL bypass successful, continuing...", color="success")
+            return driver
+        except Exception as fallback_error:
+            pretty_print(f"SSL bypass fallback also failed: {str(fallback_error)}", color="failure")
             raise e
-        raise e
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})") 
-    return driver
 
 def create_driver(headless=False, stealth_mode=True, crx_path="./crx/nopecha.crx", lang="en") -> webdriver.Chrome:
     """Create a Chrome WebDriver with specified options."""
@@ -204,7 +287,43 @@ def create_driver(headless=False, stealth_mode=True, crx_path="./crx/nopecha.crx
     chrome_options.add_experimental_option("prefs", security_prefs)
     chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
     chrome_options.add_experimental_option('useAutomationExtension', False)
-    return webdriver.Chrome(service=service, options=chrome_options)
+    
+    # Enhanced error handling for ChromeDriver creation
+    try:
+        return webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        pretty_print(f"Failed to create Chrome WebDriver: {str(e)}", color="failure")
+        
+        # Check for common ChromeDriver issues
+        if "session not created" in str(e) or "version" in str(e).lower():
+            chrome_version = get_chrome_version()
+            pretty_print(f"ChromeDriver version mismatch detected!", color="warning")
+            pretty_print(f"Current Chrome version: {chrome_version or 'Unknown'}", color="info")
+            
+            # Try to reinstall ChromeDriver
+            try:
+                pretty_print("Attempting to reinstall ChromeDriver...", color="status")
+                chromedriver_path = chromedriver_autoinstaller.install()
+                service = Service(chromedriver_path)
+                return webdriver.Chrome(service=service, options=chrome_options)
+            except Exception as reinstall_error:
+                error_msg = (
+                    f"ChromeDriver reinstallation failed: {str(reinstall_error)}\n\n"
+                    f"Chrome version: {chrome_version or 'Unknown'}\n\n"
+                    "Manual steps required:\n"
+                    "1. Visit: https://googlechromelabs.github.io/chrome-for-testing/\n"
+                    "2. Download ChromeDriver matching your Chrome version\n"
+                    "3. Replace existing chromedriver in your PATH\n"
+                    "4. Restart the application\n\n"
+                    "For detailed instructions, see README > Known Issues > ChromeDriver Issues"
+                )
+                pretty_print(error_msg, color="failure")
+                raise Exception(error_msg) from e
+        
+        # For other types of errors, provide general guidance
+        pretty_print("General Chrome WebDriver error occurred.", color="warning")
+        pretty_print("Check that Chrome browser is properly installed and accessible.", color="info")
+        raise e
 
 class Browser:
     def __init__(self, driver, anticaptcha_manual_install=False):

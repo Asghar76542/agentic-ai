@@ -1,6 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
 import os
+import sys
+
+# Load environment variables
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv not available
 
 if __name__ == "__main__": # if running as a script for individual testing
     sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -16,13 +24,48 @@ class searxSearch(Tools):
         self.tag = "web_search"
         self.name = "searxSearch"
         self.description = "A tool for searching a SearxNG for web search"
-        self.base_url = base_url or os.getenv("SEARXNG_BASE_URL")  # Requires a SearxNG base URL
+        
+        # Try multiple ways to get the base URL
+        self.base_url = base_url or os.getenv("SEARXNG_BASE_URL")
+        
+        # If still no URL, try to load from .env file in project root
+        if not self.base_url:
+            self._try_load_env_file()
+            self.base_url = os.getenv("SEARXNG_BASE_URL")
+        
+        # Default fallback
+        if not self.base_url:
+            self.base_url = "http://127.0.0.1:8080"
+            print(f"Warning: Using default SearxNG URL: {self.base_url}")
+        
         self.user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
         self.paywall_keywords = [
             "Member-only", "access denied", "restricted content", "404", "this page is not working"
         ]
-        if not self.base_url:
-            raise ValueError("SearxNG base URL must be provided either as an argument or via the SEARXNG_BASE_URL environment variable.")
+    
+    def _try_load_env_file(self):
+        """Try to load environment variables from .env file"""
+        try:
+            # Find project root by looking for config.ini
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = current_dir
+            while project_root != os.path.dirname(project_root):
+                if os.path.exists(os.path.join(project_root, "config.ini")):
+                    break
+                project_root = os.path.dirname(project_root)
+            
+            env_file = os.path.join(project_root, ".env")
+            if os.path.exists(env_file):
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#') and '=' in line:
+                            key, value = line.split('=', 1)
+                            # Remove quotes if present
+                            value = value.strip('\'"')
+                            os.environ[key] = value
+        except Exception:
+            pass  # Silently fail if we can't load .env
 
     def link_valid(self, link):
         """check if a link is valid."""
@@ -95,7 +138,23 @@ class searxSearch(Tools):
                 return "No search results, web search failed."
             return "\n\n".join(results)  # Return results as a single string, separated by newlines
         except requests.exceptions.RequestException as e:
-            raise Exception("\nSearxng search failed. did you run start_services.sh? is docker still running?") from e
+            # More helpful error message with troubleshooting steps
+            error_msg = f"""
+SearxNG search failed. This usually means the SearxNG service is not running.
+
+Error details: {str(e)}
+
+Troubleshooting steps:
+1. Check if SearxNG service is running: curl {self.base_url}
+2. Start services: ./start_services.sh
+3. Check Docker containers: docker ps | grep searxng
+4. Check Docker logs: docker logs agenticseek-searxng-1
+5. Verify environment variable: echo $SEARXNG_BASE_URL
+6. Run auto-fix: ./scripts/fix_searxng.sh
+
+If the problem persists, run: ./scripts/fix_searxng.sh
+"""
+            raise Exception(error_msg) from e
 
     def execution_failure_check(self, output: str) -> bool:
         """

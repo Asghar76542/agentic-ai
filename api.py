@@ -16,7 +16,7 @@ import uuid
 
 from sources.llm_provider import Provider
 from sources.interaction import Interaction
-from sources.agents import CasualAgent, CoderAgent, FileAgent, PlannerAgent, BrowserAgent
+from sources.agents import CasualAgent, CoderAgent, FileAgent, PlannerAgent, BrowserAgent, McpAgent
 from sources.browser import Browser, create_driver
 from sources.utility import pretty_print
 from sources.logger import Logger
@@ -92,6 +92,11 @@ def initialize_system():
             name="Planner",
             prompt_path=f"prompts/{personality_folder}/planner_agent.txt",
             provider=provider, verbose=False, browser=browser
+        ),
+        McpAgent(
+            name="MCP Agent",
+            prompt_path=f"prompts/{personality_folder}/mcp_agent.txt",
+            provider=provider, verbose=False
         )
     ]
     logger.info("Agents initialized")

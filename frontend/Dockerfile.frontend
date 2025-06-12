@@ -1,16 +1,38 @@
-FROM node:18
+# Use the official Node.js runtime as a parent image
+FROM node:18-alpine
 
+# Set build arguments
+ARG NODE_ENV=development
+ENV NODE_ENV=${NODE_ENV}
+
+# Set working directory
 WORKDIR /app
 
-# Install dependencies
+# Add a user for security
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S react -u 1001
+
+# Install dependencies first for better layer caching
 COPY agentic-seek-front/package.json agentic-seek-front/package-lock.json ./
-RUN npm install
+RUN npm ci --only=production || npm install
 
 # Copy application code
 COPY agentic-seek-front/ .
 
+# Create necessary directories and set permissions
+RUN mkdir -p public/screenshots && \
+    chown -R react:nodejs /app && \
+    chmod -R 755 /app
+
+# Switch to non-root user
+USER react
+
 # Expose port
 EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD curl -f http://localhost:3000 || exit 1
 
 # Run the application
 CMD ["npm", "start"]

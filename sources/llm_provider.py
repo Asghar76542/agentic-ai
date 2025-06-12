@@ -19,8 +19,11 @@ class Provider:
         self.provider_name = provider_name.lower()
         self.model = model
         self.is_local = is_local
-        self.server_ip = server_address
-        self.server_address = server_address
+        
+        # Enhanced server address validation and auto-fixing
+        self.server_address = self._validate_and_fix_server_address(server_address, provider_name)
+        self.server_ip = self.server_address
+        
         self.available_providers = {
             "ollama": self.ollama_fn,
             "server": self.server_fn,
@@ -37,13 +40,55 @@ class Provider:
         self.logger = Logger("provider.log")
         self.api_key = None
         self.unsafe_providers = ["openai", "deepseek", "dsk_deepseek", "together", "google", "openrouter"]
+        
         if self.provider_name not in self.available_providers:
             raise ValueError(f"Unknown provider: {provider_name}")
+            
         if self.provider_name in self.unsafe_providers and self.is_local == False:
             pretty_print("Warning: you are using an API provider. You data will be sent to the cloud.", color="warning")
             self.api_key = self.get_api_key(self.provider_name)
         elif self.provider_name != "ollama":
             pretty_print(f"Provider: {provider_name} initialized at {self.server_ip}", color="success")
+
+    def _validate_and_fix_server_address(self, server_address: str, provider_name: str) -> str:
+        """
+        Validate and auto-fix common server address issues.
+        """
+        # Providers that require HTTP/HTTPS prefix
+        http_required_providers = ["lm-studio", "server", "openai"]
+        
+        # Clean the address
+        address = server_address.strip()
+        
+        # Check if HTTP/HTTPS prefix is missing for providers that need it
+        if (provider_name.lower() in http_required_providers and 
+            not address.startswith(('http://', 'https://'))):
+            
+            # Auto-fix by adding http:// prefix
+            fixed_address = f"http://{address}"
+            pretty_print(
+                f"Auto-fixed server address: '{address}' -> '{fixed_address}' "
+                f"(Provider '{provider_name}' requires HTTP prefix)",
+                color="info"
+            )
+            return fixed_address
+        
+        # Validate the address format
+        if provider_name.lower() in http_required_providers:
+            try:
+                parsed = urlparse(address)
+                if not parsed.scheme or not parsed.netloc:
+                    raise ValueError(f"Invalid server address format: {address}")
+            except Exception as e:
+                error_msg = (
+                    f"Invalid server address '{address}' for provider '{provider_name}'. "
+                    f"Expected format: http://host:port or https://host:port. "
+                    f"Error: {str(e)}"
+                )
+                pretty_print(error_msg, color="failure")
+                raise ValueError(error_msg)
+        
+        return address
 
     def get_model_name(self) -> str:
         return self.model
@@ -333,17 +378,62 @@ class Provider:
             "max_tokens": 4096,
             "model": self.model
         }
+        
         try:
-            response = requests.post(route_start, json=payload)
+            response = requests.post(route_start, json=payload, timeout=30)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            
             result = response.json()
             if verbose:
                 print("Response from LM Studio:", result)
-            return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                
+            content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if not content:
+                pretty_print("Warning: Empty response from LM Studio", color="warning")
+            
+            return content
+            
+        except requests.exceptions.ConnectionError as e:
+            error_msg = (
+                f"Connection failed to LM Studio at {route_start}. "
+                f"Please check:\n"
+                f"1. LM Studio is running and serving on the correct port\n"
+                f"2. Server address includes 'http://' prefix: {self.server_ip}\n"
+                f"3. Port number is correct in config.ini\n"
+                f"Error: {str(e)}"
+            )
+            pretty_print(error_msg, color="failure")
+            raise Exception(error_msg) from e
+            
+        except requests.exceptions.Timeout as e:
+            error_msg = f"Timeout connecting to LM Studio at {route_start}. Server may be busy or unresponsive."
+            pretty_print(error_msg, color="failure")
+            raise Exception(error_msg) from e
+            
         except requests.exceptions.RequestException as e:
-            raise Exception(f"HTTP request failed: {str(e)}") from e
+            # Check for the specific "No connection adapters" error
+            if "No connection adapters were found" in str(e):
+                error_msg = (
+                    f"Connection adapter error for LM Studio.\n"
+                    f"Current address: {self.server_ip}\n"
+                    f"Solution: Add 'http://' prefix to your provider_server_address in config.ini\n"
+                    f"Example: provider_server_address = http://127.0.0.1:1234\n"
+                    f"Original error: {str(e)}"
+                )
+                pretty_print(error_msg, color="failure")
+                raise Exception(error_msg) from e
+            else:
+                raise Exception(f"HTTP request failed: {str(e)}") from e
+                
+        except ValueError as e:
+            error_msg = f"Invalid JSON response from LM Studio: {str(e)}"
+            pretty_print(error_msg, color="failure")
+            raise Exception(error_msg) from e
+            
         except Exception as e:
-            raise Exception(f"An error occurred: {str(e)}") from e
-        return thought
+            error_msg = f"Unexpected error with LM Studio: {str(e)}"
+            pretty_print(error_msg, color="failure")
+            raise Exception(error_msg) from e
 
     def openrouter_fn(self, history, verbose=False):
         """

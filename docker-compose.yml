@@ -52,42 +52,62 @@ services:
       - agentic-seek-net
 
   frontend:
-    container_name: frontend
+    container_name: agentic-seek-frontend
     profiles: ["core", "full"]
     build:
       context: ./frontend
       dockerfile: Dockerfile.frontend
+      args:
+        - NODE_ENV=development
     ports:
       - "3000:3000"
     volumes:
       - ./frontend/agentic-seek-front/src:/app/src:rw,z
-      - ./screenshots:/app/screenshots
+      - ./screenshots:/app/public/screenshots:ro
+      - frontend_node_modules:/app/node_modules
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
-      - REACT_APP_BACKEND_URL=http://0.0.0.0:${BACKEND_PORT:-8000}
+      - REACT_APP_BACKEND_URL=http://localhost:${BACKEND_PORT:-8000}
+      - REACT_APP_API_URL=http://localhost:${BACKEND_PORT:-8000}
+      - GENERATE_SOURCEMAP=false
+      - DISABLE_ESLINT_PLUGIN=true
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - agentic-seek-net
 
   backend:
-    container_name: backend
+    container_name: agentic-seek-backend
     profiles: ["backend", "full"]
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        - PYTHON_VERSION=3.11
     ports:
-      - ${BACKEND_PORT:-7777}:${BACKEND_PORT:-7777}
+      - ${BACKEND_PORT:-8000}:${BACKEND_PORT:-8000}
       - ${OLLAMA_PORT:-11434}:${OLLAMA_PORT:-11434}
       - ${LM_STUDIO_PORT:-1234}:${LM_STUDIO_PORT:-1234}
-      - ${CUSTOM_ADDITIONAL_LLM_PORT:-8000}:${CUSTOM_ADDITIONAL_LLM_PORT:-8000}
+      - ${CUSTOM_ADDITIONAL_LLM_PORT:-8001}:${CUSTOM_ADDITIONAL_LLM_PORT:-8001}
     volumes:
-      - ./:/app
-      - ${WORK_DIR:-.}:/opt/workspace
-    command: python3 api.py
+      - ./:/app:rw,z
+      - ${WORK_DIR:-.}:/opt/workspace:rw,z
+      - ./screenshots:/app/screenshots:rw,z
+      - backend_cache:/app/.cache
+    command: ["python3", "api.py"]
     environment:
       - SEARXNG_URL=${SEARXNG_BASE_URL:-http://searxng:8080}
       - REDIS_URL=${REDIS_BASE_URL:-redis://redis:6379/0}
       - WORK_DIR=/opt/workspace
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
@@ -96,12 +116,31 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
       - DSK_DEEPSEEK_API_KEY=${DSK_DEEPSEEK_API_KEY}
-    network_mode: "host"
+    depends_on:
+      - redis
+      - searxng
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT:-8000}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - agentic-seek-net
   
 volumes:
   redis-data:
+    driver: local
   chrome_profiles:
+    driver: local
+  frontend_node_modules:
+    driver: local
+  backend_cache:
+    driver: local
 
 networks:
   agentic-seek-net:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

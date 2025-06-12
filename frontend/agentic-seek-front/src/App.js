@@ -1,31 +1,46 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import axios from 'axios';
 import './App.css';
-import { colors } from './colors';
 
-const BACKEND_URL = process.env.BACKEND_PORT || 'http://0.0.0.0:8000';
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 function App() {
     const [query, setQuery] = useState('');
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState(null);
-    const [currentView, setCurrentView] = useState('blocks');
+    const [currentView, setCurrentView] = useState('chat');
     const [responseData, setResponseData] = useState(null);
     const [isOnline, setIsOnline] = useState(false);
     const [status, setStatus] = useState('Agents ready');
     const [expandedReasoning, setExpandedReasoning] = useState(new Set());
+    const [darkMode, setDarkMode] = useState(true);
     const messagesEndRef = useRef(null);
 
-    useEffect(() => {
-        const intervalId = setInterval(() => {
-            checkHealth();
-            fetchLatestAnswer();
-            fetchScreenshot();
-        }, 3000);
-        return () => clearInterval(intervalId);
-    }, [messages]);
+    const normalizeAnswer = (answer) => {
+        return answer
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, ' ')
+            .replace(/[.,!?]/g, '')
+    };
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    const toggleReasoning = (messageIndex) => {
+        setExpandedReasoning(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(messageIndex)) {
+                newSet.delete(messageIndex);
+            } else {
+                newSet.add(messageIndex);
+            }
+            return newSet;
+        });
+    };
 
     const checkHealth = async () => {
         try {
@@ -66,31 +81,7 @@ function App() {
         }
     };
 
-    const normalizeAnswer = (answer) => {
-        return answer
-            .trim()
-            .toLowerCase()
-            .replace(/\s+/g, ' ')
-            .replace(/[.,!?]/g, '')
-    };
-
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    };
-
-    const toggleReasoning = (messageIndex) => {
-        setExpandedReasoning(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(messageIndex)) {
-                newSet.delete(messageIndex);
-            } else {
-                newSet.add(messageIndex);
-            }
-            return newSet;
-        });
-    };
-
-    const fetchLatestAnswer = async () => {
+    const fetchLatestAnswer = useCallback(async () => {
         try {
             const res = await axios.get(`${BACKEND_URL}/latest_answer`);
             const data = res.data;
@@ -123,7 +114,16 @@ function App() {
         } catch (error) {
             console.error('Error fetching latest answer:', error);
         }
-    };
+    }, [messages]);
+
+    useEffect(() => {
+        const intervalId = setInterval(() => {
+            checkHealth();
+            fetchLatestAnswer();
+            fetchScreenshot();
+        }, 3000);
+        return () => clearInterval(intervalId);
+    }, [fetchLatestAnswer]);
 
     const updateData = (data) => {
         setResponseData((prev) => ({
@@ -143,7 +143,7 @@ function App() {
         setIsLoading(false);
         setError(null);
         try {
-            const res = await axios.get(`${BACKEND_URL}/stop`);
+            await axios.get(`${BACKEND_URL}/stop`);
             setStatus("Requesting stop...");
         } catch (err) {
             console.error('Error stopping the agent:', err);
@@ -195,130 +195,206 @@ function App() {
     };
 
     return (
-        <div className="app">
+        <div className={`app ${darkMode ? 'dark-mode' : ''}`}>
             <header className="header">
-                <h1>AgenticSeek</h1>
+                <div className="header-left">
+                    <h1>AgenticSeek</h1>
+                    <div className="status-indicator">
+                        <div className={`status-dot ${isOnline ? '' : 'disconnected'}`}></div>
+                        <span>{isOnline ? status : 'System Offline'}</span>
+                    </div>
+                </div>
+                <div className="header-right">
+                    <button 
+                        className="theme-toggle"
+                        onClick={() => setDarkMode(!darkMode)}
+                        title={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
+                    >
+                        {darkMode ? '☀️' : '🌙'}
+                    </button>
+                </div>
             </header>
             <main className="main">
-                <div className="app-sections">
-                    <div className="chat-section">
-                        <h2>Chat Interface</h2>
-                        <div className="messages">
-                            {messages.length === 0 ? (
-                                <p className="placeholder">No messages yet. Type below to start!</p>
-                            ) : (
-                                messages.map((msg, index) => (
-                                    <div
-                                        key={index}
-                                        className={`message ${
-                                            msg.type === 'user'
-                                                ? 'user-message'
-                                                : msg.type === 'agent'
-                                                ? 'agent-message'
-                                                : 'error-message'
-                                        }`}
-                                    >
-                                        <div className="message-header">
+                {currentView === 'chat' ? (
+                    <div className="chat-view">
+                        <div className="chat-section">
+                            <h2>Chat Interface</h2>
+                            <div className="messages">
+                                {messages.length === 0 ? (
+                                    <p className="placeholder">
+                                        🚀 Ready to help! Ask me anything or give me a task to complete.
+                                    </p>
+                                ) : (
+                                    messages.map((msg, index) => (
+                                        <div
+                                            key={index}
+                                            className={`message ${
+                                                msg.type === 'user'
+                                                    ? 'user-message'
+                                                    : msg.type === 'agent'
+                                                    ? `agent-message ${msg.agentName ? msg.agentName.toLowerCase().replace(/\s+/g, '-') + '-agent' : ''}`
+                                                    : 'error-message'
+                                            }`}
+                                        >
                                             {msg.type === 'agent' && (
-                                                <span className="agent-name">{msg.agentName}</span>
+                                                <div className="message-header">
+                                                    {msg.agentName && (
+                                                        <span className="agent-name">{msg.agentName}</span>
+                                                    )}
+                                                    {msg.reasoning && (
+                                                        <button 
+                                                            className="reasoning-toggle"
+                                                            onClick={() => toggleReasoning(index)}
+                                                            title={expandedReasoning.has(index) ? "Hide reasoning" : "Show reasoning"}
+                                                        >
+                                                            {expandedReasoning.has(index) ? '▼' : '▶'} Reasoning
+                                                        </button>
+                                                    )}
+                                                </div>
                                             )}
+                                            <div className="message-content">
+                                                <ReactMarkdown>{msg.content}</ReactMarkdown>
+                                            </div>
                                             {msg.type === 'agent' && msg.reasoning && expandedReasoning.has(index) && (
                                                 <div className="reasoning-content">
                                                     <ReactMarkdown>{msg.reasoning}</ReactMarkdown>
                                                 </div>
                                             )}
-                                            {msg.type === 'agent' && (
-                                                <button 
-                                                    className="reasoning-toggle"
-                                                    onClick={() => toggleReasoning(index)}
-                                                    title={expandedReasoning.has(index) ? "Hide reasoning" : "Show reasoning"}
-                                                >
-                                                    {expandedReasoning.has(index) ? '▼' : '▶'} Reasoning
-                                                </button>
-                                            )}
                                         </div>
-                                        <div className="message-content">
-                                            <ReactMarkdown>{msg.content}</ReactMarkdown>
-                                        </div>
+                                    ))
+                                )}
+                                <div ref={messagesEndRef} />
+                            </div>
+                            {isLoading && (
+                                <div className="loading-animation">
+                                    <div className="typing-indicator">
+                                        <span></span>
+                                        <span></span>
+                                        <span></span>
                                     </div>
-                                ))
+                                    Processing your request...
+                                </div>
                             )}
-                            <div ref={messagesEndRef} />
+                            {isOnline && !isLoading && (
+                                <div className="loading-animation">{status}</div>
+                            )}
+                            {!isOnline && (
+                                <p className="loading-animation">
+                                    ⚠️ System offline. Deploy backend first.
+                                </p>
+                            )}
+                            <form onSubmit={handleSubmit} className="input-form">
+                                <input
+                                    type="text"
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder="Type your query or task here..."
+                                    disabled={isLoading}
+                                />
+                                <button type="submit" disabled={isLoading || !isOnline}>
+                                    Send
+                                </button>
+                                <button type="button" onClick={handleStop} disabled={!isLoading}>
+                                    Stop
+                                </button>
+                            </form>
                         </div>
-                        {isOnline && <div className="loading-animation">{status}</div>}
-                        {!isLoading && !isOnline && <p className="loading-animation">System offline. Deploy backend first.</p>}
-                        <form onSubmit={handleSubmit} className="input-form">
-                            <input
-                                type="text"
-                                value={query}
-                                onChange={(e) => setQuery(e.target.value)}
-                                placeholder="Type your query..."
-                                disabled={isLoading}
-                            />
-                            <button type="submit" disabled={isLoading}>
-                                Send
-                            </button>
-                            <button onClick={handleStop}>
-                                Stop
-                            </button>
-                        </form>
                     </div>
+                ) : (
+                    <div className="app-sections">
+                        <div className="task-section">
+                            <h2>Task Details</h2>
+                            <div className="task-details">
+                                {responseData?.answer ? (
+                                    <div>
+                                        <strong>Current Task:</strong>
+                                        <br />
+                                        {responseData.answer}
+                                        <br /><br />
+                                        <strong>Agent:</strong> {responseData.agent_name || 'Unknown'}
+                                        <br />
+                                        <strong>Status:</strong> {responseData.status || 'Unknown'}
+                                        <br />
+                                        <strong>UID:</strong> {responseData.uid || 'N/A'}
+                                    </div>
+                                ) : (
+                                    <div>No active task. Start a conversation to see task details here.</div>
+                                )}
+                            </div>
+                        </div>
 
-                    <div className="computer-section">
-                        <h2>Computer View</h2>
-                        <div className="view-selector">
-                            <button
-                                className={currentView === 'blocks' ? 'active' : ''}
-                                onClick={() => setCurrentView('blocks')}
-                            >
-                                Editor View
-                            </button>
-                            <button
-                                className={currentView === 'screenshot' ? 'active' : ''}
-                                onClick={responseData?.screenshot ? () => setCurrentView('screenshot') : handleGetScreenshot}
-                            >
-                                Browser View
-                            </button>
-                        </div>
-                        <div className="content">
-                            {error && <p className="error">{error}</p>}
-                            {currentView === 'blocks' ? (
-                                <div className="blocks">
-                                    {responseData && responseData.blocks && Object.values(responseData.blocks).length > 0 ? (
-                                        Object.values(responseData.blocks).map((block, index) => (
-                                            <div key={index} className="block">
-                                                <p className="block-tool">Tool: {block.tool_type}</p>
-                                                <pre>{block.block}</pre>
-                                                <p className="block-feedback">Feedback: {block.feedback}</p>
-                                                {block.success ? (
-                                                    <p className="block-success">Success</p>
-                                                ) : (
-                                                    <p className="block-failure">Failure</p>
-                                                )}
+                        <div className="computer-section">
+                            <h2>Computer View</h2>
+                            <div className="view-selector">
+                                <button
+                                    className={currentView === 'blocks' ? 'active' : ''}
+                                    onClick={() => setCurrentView('blocks')}
+                                >
+                                    📝 Editor View
+                                </button>
+                                <button
+                                    className={currentView === 'screenshot' ? 'active' : ''}
+                                    onClick={responseData?.screenshot ? () => setCurrentView('screenshot') : handleGetScreenshot}
+                                >
+                                    🖥️ Browser View
+                                </button>
+                            </div>
+                            <div className="content">
+                                {error && <p className="error">{error}</p>}
+                                {currentView === 'blocks' ? (
+                                    <div className="blocks">
+                                        {responseData && responseData.blocks && Object.values(responseData.blocks).length > 0 ? (
+                                            Object.values(responseData.blocks).map((block, index) => (
+                                                <div key={index} className="block">
+                                                    <p className="block-tool">Tool: {block.tool_type}</p>
+                                                    <pre>{block.block}</pre>
+                                                    <p className="block-feedback">Feedback: {block.feedback}</p>
+                                                    {block.success ? (
+                                                        <p className="block-success">Success</p>
+                                                    ) : (
+                                                        <p className="block-failure">Failure</p>
+                                                    )}
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div className="block">
+                                                <p className="block-tool">Tool: No tool in use</p>
+                                                <pre>No file opened or tool activity yet.</pre>
+                                                <p className="block-feedback">Start a task to see editor activity here.</p>
                                             </div>
-                                        ))
-                                    ) : (
-                                        <div className="block">
-                                            <p className="block-tool">Tool: No tool in use</p>
-                                            <pre>No file opened</pre>
-                                        </div>
-                                    )}
-                                </div>
-                            ) : (
-                                <div className="screenshot">
-                                    <img
-                                        src={responseData?.screenshot || 'placeholder.png'}
-                                        alt="Screenshot"
-                                        onError={(e) => {
-                                            e.target.src = 'placeholder.png';
-                                            console.error('Failed to load screenshot');
-                                        }}
-                                        key={responseData?.screenshotTimestamp || 'default'}
-                                    />
-                                </div>
-                            )}
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="screenshot-container">
+                                        <img
+                                            src={responseData?.screenshot || 'placeholder.png'}
+                                            alt="Browser Screenshot"
+                                            onError={(e) => {
+                                                e.target.src = 'placeholder.png';
+                                                console.error('Failed to load screenshot');
+                                            }}
+                                            key={responseData?.screenshotTimestamp || 'default'}
+                                        />
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
+                )}
+                
+                <div className="section-tabs">
+                    <button
+                        className={currentView === 'chat' ? 'active' : ''}
+                        onClick={() => setCurrentView('chat')}
+                    >
+                        💬 Chat
+                    </button>
+                    <button
+                        className={currentView === 'blocks' || currentView === 'screenshot' ? 'active' : ''}
+                        onClick={() => setCurrentView('blocks')}
+                    >
+                        🔧 Workspace
+                    </button>
                 </div>
             </main>
         </div>
