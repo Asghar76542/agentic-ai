@@ -314,6 +314,7 @@ Install server specific requirements:
 
 ```sh
 pip3 install -r requirements.txt
+python -m nltk.downloader punkt  # download tokenizer
 ```
 
 Run the server script.
