@@ -39,6 +39,7 @@ Disclaimer: This demo, including all the files that appear (e.g: CV_candidates.z
 ## Prerequisites
 
 Make sure you have chrome driver, docker and python3.10 installed.
+The `nltk` package is required for text-to-speech sentence parsing.
 
 For issues related to chrome driver, see the **Chromedriver** section.
 

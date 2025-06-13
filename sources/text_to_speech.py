@@ -111,23 +111,39 @@ class Speech():
         parts = re.split(r'/|\\', path)
         return parts[-1] if parts else path
     
-    def shorten_paragraph(self, sentence):
-        #TODO find a better way, we would like to have the TTS not be annoying, speak only useful informations
+    def shorten_paragraph(self, sentence: str) -> str:
+        """Return a shortened version of paragraphs starting with ``**``.
+
+        This keeps only the first sentence of such paragraphs using NLTK's
+        sentence tokenizer when available.
         """
-        Find long paragraph like **explaination**: <long text> by keeping only the first sentence.
-        Args:
-            sentence (str): The sentence to shorten
-        Returns:
-            str: The shortened sentence
-        """
-        lines = sentence.split('\n')
+        try:
+            import nltk  # type: ignore
+            try:
+                nltk.data.find("tokenizers/punkt")
+            except LookupError:
+                nltk.download("punkt", quiet=True)
+            try:
+                nltk.data.find("tokenizers/punkt_tab")
+            except LookupError:
+                nltk.download("punkt_tab", quiet=True)
+            tokenizer = nltk.tokenize.sent_tokenize
+        except Exception:
+            tokenizer = None
+
+        lines = sentence.split("\n")
         lines_edited = []
         for line in lines:
-            if line.startswith('**'):
-                lines_edited.append(line.split('.')[0])
+            if line.startswith("**"):
+                if tokenizer:
+                    sentences = tokenizer(line)
+                    if sentences:
+                        lines_edited.append(sentences[0])
+                        continue
+                lines_edited.append(line.split(".")[0])
             else:
                 lines_edited.append(line)
-        return '\n'.join(lines_edited)
+        return "\n".join(lines_edited)
 
     def clean_sentence(self, sentence):
         """
