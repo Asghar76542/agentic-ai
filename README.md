@@ -528,6 +528,16 @@ Yes with Ollama, lm-studio or server providers, all speech to text, LLM and text
 This started as Side-Project we did out of interest about AI agents. What’s special about it is that we want to use local model and avoid APIs.
 We draw inspiration from Jarvis and Friday (Iron man movies) to make it "cool" but for functionality we take more inspiration from Manus, because that's what people want in the first place: a local manus alternative.
 Unlike Manus, AgenticSeek prioritizes independence from external systems, giving you more control, privacy and avoid api cost.
+## Memory Analytics Dashboard
+Generate an interactive overview of your conversations and knowledge graph:
+
+```sh
+python3 scripts/generate_memory_dashboard.py --open
+```
+
+Dashboard files are saved in `data/dashboard` by default.
+You can also open the dashboard from the web UI using the new **📊 Dashboard** button in the header.
+
 
 ## Contribute
 

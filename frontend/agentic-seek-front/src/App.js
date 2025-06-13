@@ -163,6 +163,15 @@ function App() {
         }
     }
 
+    const handleOpenDashboard = async () => {
+        try {
+            await axios.get(`${BACKEND_URL}/memory_dashboard`);
+            window.open(`${BACKEND_URL}/dashboard/memory_dashboard.html`, '_blank');
+        } catch (err) {
+            console.error('Error opening dashboard:', err);
+        }
+    }
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         checkHealth();
@@ -237,6 +246,13 @@ function App() {
                         title={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
                     >
                         {darkMode ? '☀️' : '🌙'}
+                    </button>
+                    <button
+                        className="dashboard-button"
+                        onClick={handleOpenDashboard}
+                        title="Open Memory Dashboard"
+                    >
+                        📊
                     </button>
                 </div>
             </header>
