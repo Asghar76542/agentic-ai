@@ -140,7 +140,8 @@ class Speech():
                     if sentences:
                         lines_edited.append(sentences[0])
                         continue
-                lines_edited.append(line.split(".")[0])
+                match = re.split(r'(?<=[.!?])\s', line, maxsplit=1)
+                lines_edited.append(match[0])
             else:
                 lines_edited.append(line)
         return "\n".join(lines_edited)

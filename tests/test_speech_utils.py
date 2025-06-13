@@ -8,6 +8,14 @@ sys.modules.setdefault('pyaudio', types.SimpleNamespace(paInt16=8, PyAudio=lambd
 sys.modules.setdefault('torch', types.ModuleType('torch'))
 sys.modules.setdefault('librosa', types.ModuleType('librosa'))
 sys.modules.setdefault('transformers', types.ModuleType('transformers'))
+sys.modules.setdefault('colorama', types.SimpleNamespace(Fore=types.SimpleNamespace(RED='', GREEN='', RESET='')))
+sys.modules.setdefault('termcolor', types.SimpleNamespace(colored=lambda *a, **k: ''))
+sys.modules.setdefault('numpy', types.SimpleNamespace(ndarray=object, float32=float, int16=int, iinfo=lambda dtype: types.SimpleNamespace(max=1)))
+sys.modules.setdefault('kokoro', types.ModuleType('kokoro'))
+sys.modules.setdefault('soundfile', types.ModuleType('soundfile'))
+ipython_display = types.SimpleNamespace(Audio=lambda *a, **k: None, display=lambda *a, **k: None)
+sys.modules.setdefault('IPython', types.ModuleType('IPython'))
+sys.modules.setdefault('IPython.display', ipython_display)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
