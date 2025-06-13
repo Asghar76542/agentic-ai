@@ -20,6 +20,7 @@ setup(
         "uvicorn>=0.34.0",
         "flask>=3.1.0",
         "aiofiles>=24.1.0",
+        "aiohttp>=3.9.1",
         "pydantic>=2.10.6",
         "pydantic_core>=2.27.2",
         "requests>=2.31.0",

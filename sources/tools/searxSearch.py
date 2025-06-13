@@ -1,5 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
+import asyncio
+import aiohttp
 import os
 import sys
 
@@ -67,38 +69,35 @@ class searxSearch(Tools):
         except Exception:
             pass  # Silently fail if we can't load .env
 
-    def link_valid(self, link):
-        """check if a link is valid."""
-        # TODO find a better way
+    async def link_valid(self, link: str) -> str:
+        """Asynchronously check if a link is valid."""
         if not link.startswith("http"):
             return "Status: Invalid URL"
-        
+
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        timeout = aiohttp.ClientTimeout(total=5)
         try:
-            response = requests.get(link, headers=headers, timeout=5)
-            status = response.status_code
-            if status == 200:
-                content = response.text.lower()
-                if any(keyword in content for keyword in self.paywall_keywords):
-                    return "Status: Possible Paywall"
-                return "Status: OK"
-            elif status == 404:
-                return "Status: 404 Not Found"
-            elif status == 403:
-                return "Status: 403 Forbidden"
-            else:
-                return f"Status: {status} {response.reason}"
-        except requests.exceptions.RequestException as e:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(link, headers=headers) as response:
+                    status = response.status
+                    if status == 200:
+                        content = (await response.text()).lower()
+                        if any(keyword in content for keyword in self.paywall_keywords):
+                            return "Status: Possible Paywall"
+                        return "Status: OK"
+                    elif status == 404:
+                        return "Status: 404 Not Found"
+                    elif status == 403:
+                        return "Status: 403 Forbidden"
+                    else:
+                        return f"Status: {status} {response.reason}"
+        except aiohttp.ClientError as e:
             return f"Error: {str(e)}"
 
-    def check_all_links(self, links):
-        """Check all links, one by one."""
-        # TODO Make it asyncromous or smth
-        statuses = []
-        for i, link in enumerate(links):
-            status = self.link_valid(link)
-            statuses.append(status)
-        return statuses
+    async def check_all_links(self, links):
+        """Asynchronously check multiple links concurrently."""
+        tasks = [self.link_valid(link) for link in links]
+        return await asyncio.gather(*tasks)
     
     def execute(self, blocks: list, safety: bool = False) -> str:
         """Executes a search query against a SearxNG instance using POST and extracts URLs and titles."""
