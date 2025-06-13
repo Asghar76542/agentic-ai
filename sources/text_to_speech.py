@@ -5,6 +5,9 @@ import subprocess
 from sys import modules
 from typing import List, Tuple, Type, Dict
 
+import nltk
+from nltk.tokenize import sent_tokenize
+
 IMPORT_FOUND = True
 try:
     from kokoro import KPipeline
@@ -38,6 +41,14 @@ class Speech():
         }
         self.pipeline = None
         self.language = language
+        try:
+            nltk.data.find('tokenizers/punkt')
+        except LookupError:
+            try:
+                nltk.download('punkt', quiet=True)
+                nltk.download('punkt_tab', quiet=True)
+            except Exception:
+                pass
         if enable and IMPORT_FOUND:
             self.pipeline = KPipeline(lang_code=self.lang_map[language])
         self.voice = self.voice_map[language][voice_idx]
@@ -112,11 +123,12 @@ class Speech():
         return parts[-1] if parts else path
     
     def shorten_paragraph(self, sentence):
-        #TODO find a better way, we would like to have the TTS not be annoying, speak only useful informations
-        """
-        Find long paragraph like **explaination**: <long text> by keeping only the first sentence.
+        """Shorten lines that start with markdown bold blocks by keeping only
+        the first sentence using ``nltk`` sentence tokenization.
+
         Args:
             sentence (str): The sentence to shorten
+
         Returns:
             str: The shortened sentence
         """
@@ -124,7 +136,16 @@ class Speech():
         lines_edited = []
         for line in lines:
             if line.startswith('**'):
-                lines_edited.append(line.split('.')[0])
+                try:
+                    tokens = sent_tokenize(line)
+                except LookupError:
+                    tokens = line.split('.')
+                    if len(tokens) > 1:
+                        tokens[0] = tokens[0].strip() + '.'
+                if tokens:
+                    lines_edited.append(tokens[0].strip())
+                else:
+                    lines_edited.append(line)
             else:
                 lines_edited.append(line)
         return '\n'.join(lines_edited)
