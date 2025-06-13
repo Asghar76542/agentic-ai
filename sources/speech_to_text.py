@@ -4,6 +4,7 @@ import queue
 import threading
 import numpy as np
 import time
+import re
 
 IMPORT_FOUND = True
 
@@ -120,12 +121,17 @@ class Transcript:
             return "cpu"
         
     def remove_hallucinations(self, text: str) -> str:
-        """Remove model hallucinations from the text."""
-        # TODO find a better way to do this
-        common_hallucinations = ['Okay.', 'Thank you.', 'Thank you for watching.', 'You\'re', 'Oh', 'you', 'Oh.', 'Uh', 'Oh,', 'Mh-hmm', 'Hmm.', 'going to.', 'not.']
-        for hallucination in common_hallucinations:
-            text = text.replace(hallucination, "")
-        return text
+        """Remove common hallucinated phrases using regex patterns."""
+        patterns = [
+            r"\b(?:okay|uh|oh|hmm|mh-hmm)\b[.,!?]*",
+            r"thank you(?: for watching)?[.,!?]*",
+            r"you\'re[.,!?]*",
+            r"going to\.",
+            r"not\."
+        ]
+        for pattern in patterns:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+        return re.sub(r"\s{2,}", " ", text).strip()
     
     def transcript_job(self, audio_data: np.ndarray, sample_rate: int = 16000) -> str:
         """Transcribe the audio data."""
