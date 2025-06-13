@@ -1,5 +1,4 @@
 from colorama import Fore
-from typing import List, Tuple, Type, Dict
 import queue
 import threading
 import numpy as np
@@ -19,6 +18,7 @@ except ImportError:
 
 audio_queue = queue.Queue()
 done = False
+
 
 class AudioRecorder:
     """
@@ -56,7 +56,7 @@ class AudioRecorder:
                     frames.append(data)
                 except Exception as e:
                     print(Fore.RED + f"AudioRecorder: Failed to read stream - {e}" + Fore.RESET)
-            
+
             raw_data = b''.join(frames)
             audio_data = np.frombuffer(raw_data, dtype=np.int16)
             audio_queue.put((audio_data, self.rate))
@@ -81,6 +81,7 @@ class AudioRecorder:
             return
         self.thread.join()
 
+
 class Transcript:
     """
     Transcript is a class that transcribes audio from the audio queue and adds it to the transcript.
@@ -93,23 +94,23 @@ class Transcript:
         device = self.get_device()
         torch_dtype = torch.float16 if device == "cuda" else torch.float32
         model_id = "distil-whisper/distil-medium.en"
-        
+
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_id, torch_dtype=torch_dtype, use_safetensors=True
         )
         model.to(device)
         processor = AutoProcessor.from_pretrained(model_id)
-        
+
         self.pipe = pipeline(
             "automatic-speech-recognition",
             model=model,
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
-            max_new_tokens=24, # a human say around 20 token in 7s
+            max_new_tokens=24,  # a human say around 20 token in 7s
             torch_dtype=torch_dtype,
             device=device,
         )
-    
+
     def get_device(self) -> str:
         if not IMPORT_FOUND:
             return "cpu"
@@ -119,7 +120,7 @@ class Transcript:
             return "cuda:0"
         else:
             return "cpu"
-        
+
     def remove_hallucinations(self, text: str) -> str:
         """Remove common filler phrases hallucinated by the model."""
         common_hallucinations = [
@@ -144,7 +145,7 @@ class Transcript:
 
         text = re.sub(r"\s+", " ", text).strip()
         return text
-    
+
     def transcript_job(self, audio_data: np.ndarray, sample_rate: int = 16000) -> str:
         """Transcribe the audio data."""
         if not IMPORT_FOUND:
@@ -157,7 +158,7 @@ class Transcript:
             audio_data = librosa.resample(audio_data, orig_sr=sample_rate, target_sr=16000)
         result = self.pipe(audio_data)
         return self.remove_hallucinations(result["text"])
-    
+
 class AudioTranscriber:
     """
     AudioTranscriber is a class that transcribes audio from the audio queue and adds it to the transcript.
@@ -201,11 +202,11 @@ class AudioTranscriber:
         global done
         if self.verbose:
             print(Fore.BLUE + "AudioTranscriber: Started processing..." + Fore.RESET)
-        
+
         while not done or not audio_queue.empty():
             try:
                 audio_data, sample_rate = audio_queue.get(timeout=1.0)
-                
+
                 start_time = time.time()
                 text = self.transcriptor.transcript_job(audio_data, sample_rate)
                 end_time = time.time()
