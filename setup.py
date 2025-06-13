@@ -42,7 +42,6 @@ setup(
         "selenium>=4.29.0",
         "markdownify>=1.1.0",
         "text2emotion>=0.0.5",
-        "python-dotenv>=1.0.0",
         "adaptive-classifier>=0.0.10",
         "langid>=1.1.6",
         "chromedriver-autoinstaller>=0.6.4",
