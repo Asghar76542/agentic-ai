@@ -42,6 +42,18 @@ function App() {
         });
     };
 
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text).catch(err => {
+            console.error('Copy failed:', err);
+        });
+    };
+
+    const formatTimestamp = (ts) => {
+        if (!ts) return '';
+        const d = new Date(ts);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
     const checkHealth = async () => {
         try {
             await axios.get(`${BACKEND_URL}/health`);
@@ -104,6 +116,7 @@ function App() {
                         agentName: data.agent_name,
                         status: data.status,
                         uid: data.uid,
+                        timestamp: new Date().getTime(),
                     },
                 ]);
                 setStatus(data.status);
@@ -157,7 +170,7 @@ function App() {
             console.log('Empty query');
             return;
         }
-        setMessages((prev) => [...prev, { type: 'user', content: query }]);
+        setMessages((prev) => [...prev, { type: 'user', content: query, timestamp: new Date().getTime() }]);
         setIsLoading(true);
         setError(null);
 
@@ -186,6 +199,12 @@ function App() {
         }
     };
 
+    const handleClearChat = () => {
+        setMessages([]);
+        setResponseData(null);
+        setStatus('Agents ready');
+    };
+
     const handleGetScreenshot = async () => {
         try {
             setCurrentView('screenshot');
@@ -205,7 +224,14 @@ function App() {
                     </div>
                 </div>
                 <div className="header-right">
-                    <button 
+                    <button
+                        className="clear-chat"
+                        onClick={handleClearChat}
+                        title="Clear chat"
+                    >
+                        🗑️
+                    </button>
+                    <button
                         className="theme-toggle"
                         onClick={() => setDarkMode(!darkMode)}
                         title={`Switch to ${darkMode ? 'light' : 'dark'} mode`}
@@ -236,22 +262,30 @@ function App() {
                                                     : 'error-message'
                                             }`}
                                         >
-                                            {msg.type === 'agent' && (
-                                                <div className="message-header">
-                                                    {msg.agentName && (
-                                                        <span className="agent-name">{msg.agentName}</span>
-                                                    )}
-                                                    {msg.reasoning && (
-                                                        <button 
+                                            <div className="message-header">
+                                                {msg.agentName && (
+                                                    <span className="agent-name">{msg.agentName}</span>
+                                                )}
+                                                <div className="message-actions">
+                                                    <span className="timestamp">{formatTimestamp(msg.timestamp)}</span>
+                                                    <button
+                                                        className="copy-button"
+                                                        onClick={() => copyToClipboard(msg.content)}
+                                                        title="Copy message"
+                                                    >
+                                                        📋
+                                                    </button>
+                                                    {msg.type === 'agent' && msg.reasoning && (
+                                                        <button
                                                             className="reasoning-toggle"
                                                             onClick={() => toggleReasoning(index)}
-                                                            title={expandedReasoning.has(index) ? "Hide reasoning" : "Show reasoning"}
+                                                            title={expandedReasoning.has(index) ? 'Hide reasoning' : 'Show reasoning'}
                                                         >
                                                             {expandedReasoning.has(index) ? '▼' : '▶'} Reasoning
                                                         </button>
                                                     )}
                                                 </div>
-                                            )}
+                                            </div>
                                             <div className="message-content">
                                                 <ReactMarkdown>{msg.content}</ReactMarkdown>
                                             </div>
