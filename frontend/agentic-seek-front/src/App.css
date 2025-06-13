@@ -253,6 +253,27 @@ body {
   height: 40px;
 }
 
+.dashboard-button {
+  padding: var(--spacing-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+}
+
+.dashboard-button:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
 .theme-toggle:hover {
   background: var(--bg-tertiary);
   color: var(--text-primary);
@@ -1238,6 +1259,7 @@ body {
   .input-form,
   .view-selector,
   .theme-toggle,
+  .dashboard-button,
   .reasoning-toggle {
     display: none !important;
   }

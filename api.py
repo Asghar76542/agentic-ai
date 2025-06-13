@@ -48,6 +48,11 @@ if not os.path.exists(".screenshots"):
     os.makedirs(".screenshots")
 api.mount("/screenshots", StaticFiles(directory=".screenshots"), name="screenshots")
 
+# Serve generated memory dashboards
+if not os.path.exists("data/dashboard"):
+    os.makedirs("data/dashboard")
+api.mount("/dashboard", StaticFiles(directory="data/dashboard"), name="dashboard")
+
 def initialize_system():
     stealth_mode = config.getboolean('BROWSER', 'stealth_mode')
     personality_folder = "jarvis" if config.getboolean('MAIN', 'jarvis_personality') else "base"
@@ -167,6 +172,20 @@ async def get_latest_answer():
     if query_resp_history:
         return JSONResponse(status_code=200, content=query_resp_history[-1])
     return JSONResponse(status_code=404, content={"error": "No answer available"})
+
+@api.get("/memory_dashboard")
+async def generate_memory_dashboard():
+    """Generate the memory analytics dashboard and return its path."""
+    try:
+        agent = interaction.current_agent or interaction.agents[0]
+        memory_system = getattr(agent.memory, "enhanced_memory_system", None)
+        if not memory_system:
+            return JSONResponse(status_code=400, content={"error": "Enhanced memory not available"})
+        dashboard_path = memory_system.generate_dashboard()
+        return {"dashboard_path": dashboard_path}
+    except Exception as e:
+        logger.error(f"Dashboard generation failed: {e}")
+        return JSONResponse(status_code=500, content={"error": "Failed to generate dashboard"})
 
 async def think_wrapper(interaction, query):
     try:
